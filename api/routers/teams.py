@@ -2,7 +2,7 @@
 from fastapi import APIRouter, HTTPException, Query
 
 from config import CURRENT_SEASON
-from database import get_connection, query_to_dict
+from database import get_cursor, query_to_dict
 from routers.schedule import attach_records
 
 router = APIRouter()
@@ -130,9 +130,8 @@ def _get_team_analytics(season: int) -> list[dict]:
     Returns one row per team. Rank direction is "1 = best for the team":
     higher-is-better metrics use DESC, lower-is-better use ASC.
     """
-    conn = get_connection()
     try:
-        available = {r[0] for r in conn.execute("DESCRIBE plays").fetchall()}
+        available = {r[0] for r in get_cursor().execute("DESCRIBE plays").fetchall()}
     except Exception:
         return []
 
