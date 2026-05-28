@@ -424,6 +424,97 @@ def load_advanced_stats(conn, seasons: list[int], log=print):
         log(f"    skipped: {e}")
 
 
+def _replace_table(conn, table: str, df: pd.DataFrame, log=print) -> None:
+    """Full-replace a table. For historical sources (draft picks, combine,
+    id mapping) where the dataset is small and not partitioned by season."""
+    if df is None or df.empty:
+        log(f"    {table}: empty payload, leaving table unchanged")
+        return
+    conn.register(f"{table}_df", df)
+    conn.execute(f"DROP TABLE IF EXISTS {table}")
+    conn.execute(f"CREATE TABLE {table} AS SELECT * FROM {table}_df")
+    count = conn.execute(f"SELECT COUNT(*) FROM {table}").fetchone()[0]
+    log(f"    {table}: {count:,} rows")
+
+
+def load_supplemental_data(conn, seasons: list[int], log=print) -> None:
+    """Vendor data that augments the core stats: injuries, depth charts,
+    draft picks, combine results, cross-source ID mapping, QBR.
+
+    Season-partitioned sources (injuries, depth_charts) upsert by season so
+    re-ingesting one year doesn't disturb others.
+
+    Historical sources (draft_picks, combine_data, ids) are small and don't
+    partition by season — we full-replace them on every ingest to pick up
+    any vendor-side updates.
+
+    QBR is fetched for the requested seasons but the upstream feed is often
+    a year behind for the current season; nfl_data_py just returns 0 rows
+    when that happens. ESPN-direct fallback is a separate concern.
+    """
+    # ── Per-season sources ──────────────────────────────────────────────────
+    log("  Injuries...")
+    try:
+        df = nfl_data_py.import_injuries(seasons)
+        if df is not None and not df.empty:
+            _upsert_by_season(conn, "injuries", df, seasons, log=log)
+    except Exception as e:
+        log(f"    skipped: {e}")
+
+    log("  Depth charts...")
+    try:
+        df = nfl_data_py.import_depth_charts(seasons)
+        if df is not None and not df.empty:
+            _upsert_by_season(conn, "depth_charts", df, seasons, log=log)
+    except Exception as e:
+        log(f"    skipped: {e}")
+
+    log("  QBR (season)...")
+    try:
+        df = nfl_data_py.import_qbr(years=seasons, frequency="season")
+        if df is not None and not df.empty:
+            _upsert_by_season(conn, "qbr_season", df, seasons, log=log)
+        else:
+            log("    nothing returned (upstream feed not yet updated for these seasons)")
+    except Exception as e:
+        log(f"    skipped: {e}")
+
+    log("  QBR (weekly)...")
+    try:
+        df = nfl_data_py.import_qbr(years=seasons, frequency="weekly")
+        if df is not None and not df.empty:
+            _upsert_by_season(conn, "qbr_weekly", df, seasons, log=log)
+        else:
+            log("    nothing returned")
+    except Exception as e:
+        log(f"    skipped: {e}")
+
+    # ── Historical sources (full replace) ──────────────────────────────────
+    # Draft picks: pull a generous historical window so PlayerPage works for
+    # players drafted in any era we have rosters for.
+    draft_years = list(range(1999, max(seasons) + 1))
+    log(f"  Draft picks (years {draft_years[0]}-{draft_years[-1]})...")
+    try:
+        df = nfl_data_py.import_draft_picks(draft_years)
+        _replace_table(conn, "draft_picks", df, log=log)
+    except Exception as e:
+        log(f"    skipped: {e}")
+
+    log(f"  Combine data (years {draft_years[0]}-{draft_years[-1]})...")
+    try:
+        df = nfl_data_py.import_combine_data(draft_years)
+        _replace_table(conn, "combine_data", df, log=log)
+    except Exception as e:
+        log(f"    skipped: {e}")
+
+    log("  Cross-source ID mapping...")
+    try:
+        df = nfl_data_py.import_ids()
+        _replace_table(conn, "id_map", df, log=log)
+    except Exception as e:
+        log(f"    skipped: {e}")
+
+
 # ---------------------------------------------------------------------------
 # Official weekly offensive stats (replaces PBP-derived passing/rushing/receiving)
 # ---------------------------------------------------------------------------
@@ -565,6 +656,9 @@ def run_ingest(seasons: list[int], log=print):
 
     log(f"\nLoading advanced stats for {seasons}...")
     load_advanced_stats(conn, seasons, log=log)
+
+    log(f"\nLoading supplemental vendor data for {seasons}...")
+    load_supplemental_data(conn, seasons, log=log)
 
     # Materialize team-analytics so /team-analytics serves a precomputed
     # SELECT instead of running a 150-line CTE per request.
