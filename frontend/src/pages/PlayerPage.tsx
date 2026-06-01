@@ -1195,7 +1195,7 @@ function CareerCardContent({ player }: { player: PlayerProfile }) {
 
   // PFR-sourced fields (Pro Bowls, All-Pros, weighted career AV) only exist
   // for drafted players — the upstream draft_picks dataset is keyed on the
-  // draft. UDFAs (Romo, Kurt Warner, Tony Romo, etc.) won't have these.
+  // draft. UDFAs (Romo, Kurt Warner, Wes Welker) won't have these.
   if (draft) {
     if (draft.car_av   != null && draft.car_av   > 0) career.push({ label: 'AV',         value: String(Math.round(draft.car_av)) })
     if (draft.probowls != null && draft.probowls > 0) career.push({ label: 'Pro Bowls', value: String(draft.probowls) })
@@ -1207,12 +1207,28 @@ function CareerCardContent({ player }: { player: PlayerProfile }) {
   const games = (draft?.games != null && draft.games > 0) ? draft.games : player.games_played
   if (games > 0) career.push({ label: 'Games', value: String(games) })
 
+  // Major awards (MVP, OPOY, DPOY, OROY, DROY, CPOY) sourced from the
+  // PAST_AWARDS ground-truth table. Lives in the same card so a player's
+  // honors are one logical block: stat tiles + award badges.
+  const awards = getPlayerAwards(player.player_name)
+
+  const hasContent = career.length > 0 || awards.length > 0
+
   return (
     <>
       <div className="text-[10px] font-bold text-gray-500 uppercase tracking-widest mb-3">Career Achievements</div>
-      {career.length > 0 ? (
-        <div className={`grid gap-3 ${career.length >= 3 ? 'grid-cols-4' : 'grid-cols-2'}`}>
-          {career.map(c => <BigStat key={c.label} label={c.label} value={c.value} />)}
+      {hasContent ? (
+        <div className="flex flex-col gap-3">
+          {career.length > 0 && (
+            <div className={`grid gap-3 ${career.length >= 3 ? 'grid-cols-4' : 'grid-cols-2'}`}>
+              {career.map(c => <BigStat key={c.label} label={c.label} value={c.value} />)}
+            </div>
+          )}
+          {awards.length > 0 && (
+            <div className="flex flex-wrap gap-1.5 pt-1">
+              {awards.map(a => <AwardBadge key={`${a.season}-${a.award}`} season={a.season} award={a.award} />)}
+            </div>
+          )}
         </div>
       ) : (
         <EmptyCardBody headline="—" sub="No accolades on record" />
@@ -1367,8 +1383,8 @@ export default function PlayerPage() {
   const playerPos   = detectPos(allTotals, player.position)
   const hasAdvanced = ['QB', 'RB', 'WR'].includes(playerPos)
 
-  // Career awards (lookup against PAST_AWARDS by player name)
-  const careerAwards = getPlayerAwards(player.player_name)
+  // (Career awards are now rendered inside BackgroundCard / CareerCardContent
+  //  using getPlayerAwards(player.player_name).)
 
   // League ranks for the most recent regular season (computed once leaders load)
   const ranks: Record<string, string | null> = recentLeaders
@@ -1436,13 +1452,6 @@ export default function PlayerPage() {
                     <span className="text-indigo-400 text-xs">→</span>
                   </Link>
                 ))}
-              </div>
-            )}
-
-            {/* Award badges */}
-            {careerAwards.length > 0 && (
-              <div className="flex flex-wrap gap-1.5 mt-3">
-                {careerAwards.map(a => <AwardBadge key={`${a.season}-${a.award}`} season={a.season} award={a.award} />)}
               </div>
             )}
 
