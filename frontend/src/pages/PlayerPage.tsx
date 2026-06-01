@@ -696,6 +696,37 @@ function CareerTable({ seasons, bySeason, ngs, snapTotals, situational, wpa, adv
           </tbody>
         </table>
       </div>
+      <TableEraNotes seasons={seasons} cols={cols} />
+    </div>
+  )
+}
+
+// Footer that explains "—" cells caused by era-availability gaps. Only
+// shows notes that are actually relevant to this player's seasons and
+// the columns visible in the table. A young player who debuted in 2020
+// sees nothing here; Brady sees explanations for NGS / EPA / Snaps.
+function TableEraNotes({ seasons, cols }: { seasons: number[]; cols: Col[] }) {
+  if (seasons.length === 0) return null
+  const oldest = Math.min(...seasons)
+  const notes: string[] = []
+
+  const hasNgs   = cols.some(c => c.kind === 'ngs')
+  const hasAdv   = cols.some(c => c.kind === 'adv' || c.wpaOnly)
+  const hasSnap  = cols.some(c => c.kind === 'snap')
+
+  if (hasNgs  && oldest < 2016) notes.push('NGS metrics (CPOE, ADOT, separation, time to throw) only tracked from 2016+')
+  if (hasAdv  && oldest < 2006) notes.push('EPA-based metrics start in 2006 when the model became available')
+  if (hasSnap && oldest < 2012) notes.push('Snap counts tracked from 2012+')
+
+  if (notes.length === 0) return null
+
+  return (
+    <div className="border-t border-gray-800/60 px-4 py-2.5 flex flex-wrap items-baseline gap-x-3 gap-y-1">
+      <span className="text-[10px] font-bold text-gray-600 uppercase tracking-widest shrink-0">—</span>
+      <span className="text-[11px] text-gray-500">means data unavailable for that season:</span>
+      {notes.map(n => (
+        <span key={n} className="text-[11px] text-gray-500">· {n}</span>
+      ))}
     </div>
   )
 }
