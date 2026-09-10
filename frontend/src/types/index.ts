@@ -13,6 +13,10 @@ export type HealthResponse      = Schemas['HealthResponse']
 export type SeasonStatus        = Schemas['SeasonStatus']
 export type LoadSeasonResponse  = Schemas['LoadSeasonResponse']
 
+// Live scoreboard
+export type LiveGameOut      = Schemas['LiveGameOut']
+export type Scoreboard       = Schemas['Scoreboard']
+
 // Schedule / games
 export type Game             = Schemas['Game']
 export type ScheduleWeek     = Schemas['ScheduleWeek']

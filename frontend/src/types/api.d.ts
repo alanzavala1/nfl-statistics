@@ -524,6 +524,23 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/live/scoreboard": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Get Scoreboard */
+        get: operations["get_scoreboard_api_live_scoreboard_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
 }
 export type webhooks = Record<string, never>;
 export interface components {
@@ -1202,6 +1219,41 @@ export interface components {
             /** Rotation */
             rotation: components["schemas"]["LineupPlayer"][];
         };
+        /**
+         * LiveGameOut
+         * @description A game as the live tier reports it.
+         *
+         *     Deliberately an overlay rather than a second copy of `Game`: it carries
+         *     `game_id`, so the client merges it onto the cards it already has instead of
+         *     learning a parallel vocabulary for the same fixture.
+         */
+        LiveGameOut: {
+            /** Game Id */
+            game_id: string | null;
+            /** Away Team */
+            away_team: string;
+            /** Home Team */
+            home_team: string;
+            /** Gameday */
+            gameday: string;
+            /**
+             * State
+             * @enum {string}
+             */
+            state: "pre" | "in" | "post";
+            /** Away Score */
+            away_score: number | null;
+            /** Home Score */
+            home_score: number | null;
+            /** Period */
+            period: number | null;
+            /** Clock */
+            clock: string | null;
+            /** Possession */
+            possession: string | null;
+            /** Detail */
+            detail: string | null;
+        };
         /** LoadSeasonResponse */
         LoadSeasonResponse: {
             /** Season */
@@ -1210,7 +1262,7 @@ export interface components {
              * Status
              * @enum {string}
              */
-            status: "loaded" | "queued" | "loading" | "error" | "available";
+            status: "loaded" | "scheduled" | "queued" | "loading" | "error" | "available";
         };
         /**
          * NgsStats
@@ -1686,6 +1738,20 @@ export interface components {
             /** Games */
             games: components["schemas"]["Game"][];
         };
+        /** Scoreboard */
+        Scoreboard: {
+            /** Games */
+            games: components["schemas"]["LiveGameOut"][];
+            /**
+             * Source
+             * @enum {string}
+             */
+            source: "live" | "stale" | "schedule";
+            /** Poll After */
+            poll_after: number | null;
+            /** Fetched At */
+            fetched_at: string;
+        };
         /** ScoringPlay */
         ScoringPlay: {
             /** Qtr */
@@ -1732,7 +1798,7 @@ export interface components {
              * Status
              * @enum {string}
              */
-            status: "loaded" | "queued" | "loading" | "error" | "available";
+            status: "loaded" | "scheduled" | "queued" | "loading" | "error" | "available";
         };
         /**
          * SituationalStats
@@ -3110,6 +3176,26 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    get_scoreboard_api_live_scoreboard_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Scoreboard"];
                 };
             };
         };

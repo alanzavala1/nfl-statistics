@@ -17,6 +17,10 @@ export default {
         data: {
           win: '#34d399',
           loss: '#f87171',
+          // A game in progress. Shares the loss hue because red-for-live is the
+          // convention every sports app has trained people on, but it is named
+          // separately so the code never implies a result where there is none.
+          live: '#f87171',
         },
         gold: '#f5c451',
       },

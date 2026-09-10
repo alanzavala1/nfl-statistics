@@ -2,6 +2,8 @@ import { useEffect, useMemo, useRef, useState } from 'react'
 import { Link, useSearchParams } from 'react-router-dom'
 import { api } from '../api'
 import type { DivisionStandings, Game, LeagueLeader, SeasonEntry, StandingsTeam, WeekGroup } from '../api'
+import type { LiveGameOut } from '../types'
+import { LiveScoresProvider, useLiveGame } from '../hooks/useLiveScores'
 import Card, { CardRow } from '../components/Card'
 import Nav from '../components/Nav'
 import { AWARD_LABEL, AWARD_ORDER, PAST_AWARDS, SB_CHAMPS } from '../utils/awards'
@@ -97,10 +99,16 @@ function parseNumberParam(value: string | null): number | null {
   return Number.isFinite(parsed) ? parsed : null
 }
 
+// "scheduled" counts here where it doesn't on Leaders or Standings: a season
+// whose fixtures are published but whose games haven't been charted yet has
+// nothing to rank, but it does have a schedule — and during week one it is
+// where the live scores are.
+const SELECTABLE = new Set(['loaded', 'scheduled'])
+
 function defaultSeason(seasons: SeasonEntry[]): number | null {
   if (!seasons.length) return null
-  const loaded = seasons.filter(s => s.status === 'loaded')
-  const pool = loaded.length ? loaded : seasons
+  const selectable = seasons.filter(s => SELECTABLE.has(s.status))
+  const pool = selectable.length ? selectable : seasons
   return [...pool].sort((a, b) => b.season - a.season)[0]?.season ?? null
 }
 
@@ -626,10 +634,29 @@ function GameTeam({
   )
 }
 
-function GameScoreBlock({ game }: { game: Game }) {
+function LiveScoreBlock({ live }: { live: LiveGameOut }) {
+  // No dimming of a "losing" side here: the game isn't over, and greying out a
+  // team that is one score behind reads as a result it hasn't earned.
+  return (
+    <div className="min-w-[78px] text-center">
+      <div className="flex items-center justify-center gap-1.5 text-xl font-black tabular-nums text-ink">
+        <span>{live.away_score ?? 0}</span>
+        <span className="text-ink-dim">-</span>
+        <span>{live.home_score ?? 0}</span>
+      </div>
+      <div className="mt-0.5 text-[10px] font-bold uppercase tracking-[0.12em] tabular-nums text-data-live">
+        {live.period ? `Q${live.period}` : 'LIVE'}{live.clock ? ` · ${live.clock}` : ''}
+      </div>
+    </div>
+  )
+}
+
+function GameScoreBlock({ game, live }: { game: Game; live?: LiveGameOut | null }) {
   const finished = isFinished(game)
   const awayWon = gameWinner(game) === game.away_team
   const homeWon = gameWinner(game) === game.home_team
+
+  if (live?.state === 'in') return <LiveScoreBlock live={live} />
 
   if (!finished) {
     return (
@@ -669,8 +696,11 @@ function MarketLineMeta({ spread, total, label }: { spread: string | null; total
 }
 
 function GameRow({ game }: { game: Game }) {
-  const finished = isFinished(game)
-  const winner = gameWinner(game)
+  const live = useLiveGame(game.game_id)
+  const isLive = live?.state === 'in'
+  // A game in progress is not finished, whatever the stored scores say.
+  const finished = !isLive && isFinished(game)
+  const winner = finished ? gameWinner(game) : null
   const spread = formatSpread(game)
   const total = formatTotalLine(game)
 
@@ -679,11 +709,21 @@ function GameRow({ game }: { game: Game }) {
       to={`/games/${game.game_id}`}
       className="grid grid-cols-[40px_minmax(0,1fr)_auto_minmax(0,1fr)_116px] gap-3 py-[13px] max-[780px]:grid-cols-[40px_minmax(0,1fr)_auto_minmax(0,1fr)] max-[780px]:gap-2"
     >
-      <span className={`grid h-8 w-10 place-items-center rounded-lg text-[10px] font-black uppercase tracking-[0.12em] ${
-        finished ? 'bg-surface-raise text-ink-mid' : 'bg-surface-raise text-ink-mid'
-      }`}>
-        {finished ? 'FT' : dayAbbrev(game.gameday)}
-      </span>
+      {isLive ? (
+        <span
+          className="grid h-8 w-10 place-items-center gap-[3px] rounded-lg bg-surface-raise text-[9px] font-black uppercase tracking-[0.1em] text-data-live"
+          title={live?.detail ?? 'In progress'}
+        >
+          <span className="flex items-center gap-1">
+            <span className="h-1.5 w-1.5 animate-pulse rounded-full bg-data-live motion-reduce:animate-none" />
+            LIVE
+          </span>
+        </span>
+      ) : (
+        <span className="grid h-8 w-10 place-items-center rounded-lg bg-surface-raise text-[10px] font-black uppercase tracking-[0.12em] text-ink-mid">
+          {finished ? 'FT' : dayAbbrev(game.gameday)}
+        </span>
+      )}
       <GameTeam
         team={game.away_team}
         record={game.away_record}
@@ -691,7 +731,7 @@ function GameRow({ game }: { game: Game }) {
         finished={finished}
         align="left"
       />
-      <GameScoreBlock game={game} />
+      <GameScoreBlock game={game} live={live} />
       <GameTeam
         team={game.home_team}
         record={game.home_record}
@@ -699,9 +739,13 @@ function GameRow({ game }: { game: Game }) {
         finished={finished}
         align="right"
       />
-      {spread || total
-        ? <MarketLineMeta spread={spread} total={total} label={finished ? 'Closing' : 'Line'} />
-        : <div className="justify-self-end text-right text-xs font-bold text-ink-dim max-[780px]:hidden">{finished ? 'View' : 'Line TBD'}</div>
+      {isLive
+        ? <div className="justify-self-end text-right text-xs font-bold tabular-nums text-ink-mid max-[780px]:hidden">
+            {live?.possession ? `${live.possession} ball` : 'In progress'}
+          </div>
+        : spread || total
+          ? <MarketLineMeta spread={spread} total={total} label={finished ? 'Closing' : 'Line'} />
+          : <div className="justify-self-end text-right text-xs font-bold text-ink-dim max-[780px]:hidden">{finished ? 'View' : 'Line TBD'}</div>
       }
     </CardRow>
   )
@@ -957,7 +1001,7 @@ function LoadingCard({ title, message }: { title: string; message: string }) {
   )
 }
 
-export default function SchedulePage() {
+function SchedulePageBody() {
   const [searchParams, setSearchParams] = useSearchParams()
   const [seasons, setSeasons] = useState<SeasonEntry[]>([])
   const [loadingSeason, setLoadingSeason] = useState(false)
@@ -1163,5 +1207,15 @@ export default function SchedulePage() {
         </aside>
       </main>
     </>
+  )
+}
+
+
+export default function SchedulePage() {
+  // One poll feeds every card on the page.
+  return (
+    <LiveScoresProvider>
+      <SchedulePageBody />
+    </LiveScoresProvider>
   )
 }

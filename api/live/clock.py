@@ -38,8 +38,14 @@ NOMINAL_LENGTH = timedelta(hours=4)
 # Poll intervals, in seconds. `None` means don't poll at all.
 IDLE = None
 PRE = 60      # in the window, waiting for kickoff
-LIVE = 15     # a game is actually being played
 POST = 300    # everything in the window has finished; wind down
+
+# A game is being played. Measured against the source rather than guessed: ESPN
+# republishes roughly every 40 seconds, and its edge nodes can disagree for a
+# few seconds either side, so polling faster than this only re-fetches values
+# that haven't moved. 20s keeps us within half an update of the source while
+# asking three times a minute instead of four.
+LIVE = 20
 
 
 def kickoff_utc(gameday: str | None, gametime: str | None) -> datetime | None:
