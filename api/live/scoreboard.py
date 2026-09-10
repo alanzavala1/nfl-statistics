@@ -117,9 +117,9 @@ def scoreboard(now: datetime | None = None) -> dict:
     """
     now = now or datetime.now(timezone.utc)
 
-    # What the clock says before anything is fetched. `states` is unknown on a
-    # cold cache, so this is the conservative answer; a live game seen in the
-    # response upgrades it below.
+    # Whether to talk to the upstream at all. This call is deliberately
+    # state-blind — it only has to distinguish "no football, don't ask" from
+    # "something is happening, ask".
     interval = clock.poll_interval(now)
 
     if interval is clock.IDLE:
@@ -130,7 +130,16 @@ def scoreboard(now: datetime | None = None) -> dict:
         _cache.put(payload)
         return payload
 
-    cached = _cache.get(interval)
+    # Reuse the TTL the cached answer was built with, NOT a fresh state-blind
+    # estimate. `poll_interval` can only return LIVE (20s) when it is told a
+    # game is in progress, and it cannot be told that before the fetch — so
+    # the value above is PRE (60s) during a live game. Using it as the cache
+    # TTL meant the server replayed one snapshot for a minute while telling
+    # clients to come back in twenty seconds, and the scoreboard updated a
+    # third as often as designed.
+    stale = _cache.stale()
+    ttl = stale.get("poll_after") if stale else None
+    cached = _cache.get(ttl if isinstance(ttl, int) else interval)
     if cached is not None:
         return cached
 

@@ -36,7 +36,10 @@ function LineScore({ live }: { live: LiveGameOut }) {
   ]
 
   return (
-    <div className="overflow-x-auto border-t border-surface-line">
+    // Scores change under the reader with no navigation, so the table has to
+    // announce itself. "polite" not "assertive": a score update is worth
+    // hearing at the next pause, not worth interrupting mid-sentence.
+    <div className="overflow-x-auto border-t border-surface-line" aria-live="polite" aria-atomic="false">
       <table className="w-full min-w-[320px] text-sm">
         <thead>
           <tr className="text-[10px] font-black uppercase tracking-[0.12em] text-ink-dim">

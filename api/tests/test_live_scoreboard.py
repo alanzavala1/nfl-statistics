@@ -3,7 +3,8 @@
 No network here. The provider is a stub, so these test our behaviour around an
 upstream rather than the upstream itself.
 """
-from datetime import datetime, timezone
+import time
+from datetime import datetime, timedelta, timezone
 
 import pytest
 
@@ -11,6 +12,8 @@ from live import clock, scoreboard as sb
 from live.provider import LiveGame
 
 NOW = datetime(2026, 9, 10, 1, 30, tzinfo=timezone.utc)
+# The 2026 opener: 20:20 ET on the 9th is 00:20Z on the 10th.
+KICKOFF = datetime(2026, 9, 10, 0, 20, tzinfo=timezone.utc)
 
 LIVE_GAME = LiveGame(
     away_team="NE", home_team="SEA", gameday="2026-09-09", state="in",
@@ -109,6 +112,58 @@ class TestQuietWhenThereIsNoFootball:
         wired(StubProvider(), interval=clock.IDLE)
         first = sb.scoreboard(NOW)
         assert sb.scoreboard(NOW) is first
+
+
+class TestCacheTtlMatchesWhatWeTellClients:
+    """The regression that shipped, and why the other tests missed it.
+
+    `scoreboard()` calls `poll_interval` twice: once before fetching, with no
+    states, only to decide whether to talk to the upstream at all — and once
+    after, with the real states, to tell the client when to return. The first
+    call cannot return LIVE, because LIVE requires knowing a game is in
+    progress. Using its answer as the cache TTL meant the server replayed one
+    snapshot for 60s while advertising 20s.
+
+    Every other test in this file stubs `clock.poll_interval` with a constant
+    lambda, so none of them could ever see this: each call was correct in
+    isolation and the interaction was wrong. These stub the DATA (`games_near`)
+    and let the real interval logic run.
+    """
+
+    @pytest.fixture
+    def live_clock(self, monkeypatch):
+        game = {
+            "game_id": "2026_01_NE_SEA", "gameday": "2026-09-09", "gametime": "20:20",
+            "away_team": "NE", "home_team": "SEA", "away_score": None, "home_score": None,
+        }
+        monkeypatch.setattr(sb.clock, "games_near", lambda now, lookback_days=1: [game])
+        monkeypatch.setattr(sb, "_from_schedule", lambda now: [SCHEDULE_GAME])
+        monkeypatch.setattr(sb, "resolve_game_ids", lambda games: games)
+        provider = StubProvider()
+        monkeypatch.setattr(sb, "get_provider", lambda: provider)
+        return provider
+
+    def test_client_is_told_the_live_interval(self, live_clock):
+        during = KICKOFF + timedelta(hours=1)
+        assert sb.scoreboard(during)["poll_after"] == clock.LIVE
+
+    def test_server_refetches_on_the_interval_it_advertised(self, live_clock):
+        during = KICKOFF + timedelta(hours=1)
+        sb.scoreboard(during)
+        assert live_clock.calls == 1
+
+        # 30s on: past the 20s we advertised, still inside the 60s that the
+        # state-blind estimate would have used. The bug served cache here.
+        sb._cache._at = time.monotonic() - 30
+        sb.scoreboard(during)
+        assert live_clock.calls == 2, "served stale past the TTL it advertised to clients"
+
+    def test_still_serves_cache_inside_the_advertised_interval(self, live_clock):
+        during = KICKOFF + timedelta(hours=1)
+        sb.scoreboard(during)
+        sb._cache._at = time.monotonic() - 5      # well inside 20s
+        sb.scoreboard(during)
+        assert live_clock.calls == 1
 
 
 class TestPayload:

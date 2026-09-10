@@ -632,7 +632,7 @@ function LiveScoreBlock({ live }: { live: LiveGameOut }) {
   // No dimming of a "losing" side here: the game isn't over, and greying out a
   // team that is one score behind reads as a result it hasn't earned.
   return (
-    <div className="min-w-[78px] text-center">
+    <div className="min-w-[78px] text-center" aria-live="polite">
       <div className="flex items-center justify-center gap-1.5 text-xl font-black tabular-nums text-ink">
         <span>{live.away_score ?? 0}</span>
         <span className="text-ink-dim">-</span>
