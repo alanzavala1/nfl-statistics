@@ -418,13 +418,56 @@ PLAYS_KEEP_COLUMNS = [
 ]
 
 
+# Listed in PLAYS_KEEP_COLUMNS but never present in the pbp parquet itself —
+# they arrive from other nflverse feeds (FTN charting, the game-id map) and are
+# joined in later. Parquet rejects the whole column list if one name is absent,
+# so these are dropped from the request; the post-fetch prune below still keeps
+# whatever did arrive.
+PBP_COLUMNS_FROM_OTHER_FEEDS = ("route", "nflverse_game_id")
+
+
+def _load_pbp(seasons: list[int], log=print):
+    """Fetch play-by-play pruned to the columns we keep, or None if the season
+    has no published plays yet.
+
+    Two wrinkles make this more than one call. Asking for `columns` up front is
+    what keeps the frame small — nflverse ships 372 columns and we keep 168,
+    measured at 155 MB against 328 MB for 2025 — and it is the unpruned frame
+    that has OOM-killed this container before. But older seasons predate some of
+    those columns and parquet raises on a missing one, so a rejected list falls
+    back to fetching everything and pruning afterwards: slower and heavier, but
+    correct for any season.
+
+    Separately, nflverse publishes a season's plays only once its first games
+    are played and charted, so an unplayed season's parquet 404s. nfl_data_py's
+    handler for exactly that case is broken upstream (`except Error` names an
+    undefined global, __init__.py:153), so the miss surfaces as NameError rather
+    than anything descriptive. Either way it means "no plays yet", not "broken".
+    """
+    pruned = [c for c in PLAYS_KEEP_COLUMNS if c not in PBP_COLUMNS_FROM_OTHER_FEEDS]
+    for columns in (pruned, None):
+        try:
+            return nfl_data_py.import_pbp_data(
+                seasons, columns=columns, include_participation=False
+            )
+        except Exception as e:
+            scope = "pruned" if columns else "full"
+            log(f"  pbp fetch ({scope}) failed: {type(e).__name__}: {e}")
+    return None
+
+
 def load_and_store_raw(conn, seasons: list[int], log=print):
     log(f"Loading play-by-play for {seasons}...")
-    plays = nfl_data_py.import_pbp_data(seasons)
-    keep = [c for c in PLAYS_KEEP_COLUMNS if c in plays.columns]
-    log(f"  keeping {len(keep)}/{len(plays.columns)} pbp columns")
-    plays = plays[keep]
-    _upsert_by_season(conn, "plays", plays, seasons, log=log)
+    plays = _load_pbp(seasons, log=log)
+    if plays is None:
+        # Not fatal: schedules and rosters are published months ahead of the
+        # first snap, so a season with no plays yet still has data worth having.
+        log(f"  no published play-by-play for {seasons} yet — continuing")
+    else:
+        keep = [c for c in PLAYS_KEEP_COLUMNS if c in plays.columns]
+        log(f"  keeping {len(keep)}/{len(plays.columns)} pbp columns")
+        plays = plays[keep]
+        _upsert_by_season(conn, "plays", plays, seasons, log=log)
 
     log(f"Loading schedules...")
     schedules = nfl_data_py.import_schedules(seasons)
@@ -829,6 +872,15 @@ def run_ingest(seasons: list[int], log=print):
     """Full ingest pipeline for the given seasons. Safe to call from the API."""
     conn = get_connection()
     plays = load_and_store_raw(conn, seasons, log=log)
+
+    if plays is None:
+        # Every derived table below is built from play-by-play. Stop here rather
+        # than materializing empty stats over a season that hasn't been played.
+        # Schedules and rosters are already stored; re-run once nflverse
+        # publishes plays and this completes normally.
+        log(f"\nNo play-by-play for {seasons} yet — schedules and rosters are "
+            f"loaded; skipping derived stats until plays are published.")
+        return
 
     # Build stats only for the seasons being ingested — never touch other seasons.
     build_player_game_stats(conn, plays, seasons, log=log)

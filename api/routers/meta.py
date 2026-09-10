@@ -52,12 +52,13 @@ def load_season(
     ip = request.client.host if request and request.client else "unknown"
     if _limiter.limited(ip):
         raise HTTPException(status_code=429, detail="Too many load requests — give it a minute.")
-    # force=true re-ingests an already-loaded season (expensive). Gate it behind
-    # a server-side admin token; the frontend only ever calls with force=false.
-    if force:
-        admin = os.environ.get("ADMIN_TOKEN")
-        if not admin or x_admin_token != admin:
-            raise HTTPException(status_code=403, detail="force reload requires a valid admin token")
+    # Every ingest is now admin-only, not just force=true. Ingest is a heavy,
+    # single-writer job that has no business running inside a container serving
+    # traffic; production ships a rebuilt database instead (see api/jobs/). This
+    # endpoint survives for local rebuilds and one-off repairs.
+    admin = os.environ.get("ADMIN_TOKEN")
+    if not admin or x_admin_token != admin:
+        raise HTTPException(status_code=403, detail="Ingest requires a valid admin token")
     status = queue_season(year, force=force)
     return {"season": year, "status": status}
 

@@ -595,17 +595,15 @@ def client(seeded_conn, monkeypatch) -> TestClient:
     import routers.meta
 
     monkeypatch.setattr(database, "_conn", seeded_conn)
-    # queue_season is imported by name into main and routers.meta, so patching
-    # the ingest_queue module alone does NOT reach them — the lifespan's
-    # auto-load was hitting the real queue and ingesting actual seasons over
-    # the network into this in-memory DB mid-suite. Patch every reference,
-    # and stub the worker's run_ingest so nothing already queued can ingest.
+    # Startup no longer ingests, so the lifespan itself is inert. What remains
+    # to defend is the admin load endpoint: queue_season is imported by name
+    # into routers.meta, so patching ingest_queue alone does NOT reach it. Patch
+    # both, and stub run_ingest so nothing already queued can hit the network.
     stub = lambda year, force=False: "loaded"  # noqa: E731
     monkeypatch.setattr(ingest_queue, "queue_season", stub)
-    monkeypatch.setattr(main, "queue_season", stub)
     monkeypatch.setattr(routers.meta, "queue_season", stub)
     monkeypatch.setattr(ingest_queue, "run_ingest", lambda years, log=print: None)
 
-    # TestClient runs lifespan; with queue_season stubbed, no network calls happen.
+    # TestClient runs lifespan; it reads only, so no network calls happen.
     with TestClient(main.app) as c:
         yield c
