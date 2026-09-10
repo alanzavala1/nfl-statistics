@@ -6,9 +6,10 @@ budget enforced inside llm.run_ask. The model can only reach verified tools —
 there is no arbitrary SQL path — so the existing data-accuracy guarantees hold.
 """
 import json
+import os
 
 import anthropic
-from fastapi import APIRouter, HTTPException, Request, Response
+from fastapi import APIRouter, Header, HTTPException, Request, Response
 from fastapi.responses import StreamingResponse
 
 from llm import read_gaps, run_ask, run_ask_stream
@@ -118,8 +119,22 @@ def ask_stream(req: AskRequest, request: Request):
 
 
 @router.get("/gaps")
-def gaps(response: Response, limit: int = 50):
+def gaps(
+    response: Response,
+    limit: int = 50,
+    x_admin_token: str | None = Header(default=None),
+):
     """Review the data gaps the assistant has logged — questions it couldn't
-    fully answer because the platform is missing that stat/split/season."""
+    fully answer because the platform is missing that stat/split/season.
+
+    Admin-only. The Ask box is free text typed by strangers, so this log is
+    visitor input; it was previously readable by any anonymous caller, which
+    made anything personal someone typed into Ask publicly retrievable the
+    moment the model couldn't fully answer it. Gated the same way the ingest
+    trigger is, and failing closed when no token is configured.
+    """
+    admin = os.environ.get("ADMIN_TOKEN")
+    if not admin or x_admin_token != admin:
+        raise HTTPException(status_code=403, detail="Gap log requires a valid admin token")
     response.headers["Cache-Control"] = "no-store"  # review data, never cache
     return read_gaps(max(1, min(limit, 500)))

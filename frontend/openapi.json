@@ -1272,6 +1272,24 @@
           }
         }
       }
+    },
+    "/api/live/scoreboard": {
+      "get": {
+        "summary": "Get Scoreboard",
+        "operationId": "get_scoreboard_api_live_scoreboard_get",
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Scoreboard"
+                }
+              }
+            }
+          }
+        }
+      }
     }
   },
   "components": {
@@ -3804,6 +3822,242 @@
         ],
         "title": "LineupTeam"
       },
+      "LiveGameOut": {
+        "properties": {
+          "game_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Game Id"
+          },
+          "away_team": {
+            "type": "string",
+            "title": "Away Team"
+          },
+          "home_team": {
+            "type": "string",
+            "title": "Home Team"
+          },
+          "gameday": {
+            "type": "string",
+            "title": "Gameday"
+          },
+          "state": {
+            "type": "string",
+            "enum": [
+              "pre",
+              "in",
+              "post"
+            ],
+            "title": "State"
+          },
+          "away_score": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Away Score"
+          },
+          "home_score": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Home Score"
+          },
+          "period": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Period"
+          },
+          "clock": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Clock"
+          },
+          "possession": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Possession"
+          },
+          "detail": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Detail"
+          },
+          "away_periods": {
+            "items": {
+              "type": "integer"
+            },
+            "type": "array",
+            "title": "Away Periods"
+          },
+          "home_periods": {
+            "items": {
+              "type": "integer"
+            },
+            "type": "array",
+            "title": "Home Periods"
+          },
+          "down_distance": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Down Distance"
+          },
+          "red_zone": {
+            "type": "boolean",
+            "title": "Red Zone"
+          },
+          "last_play": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Last Play"
+          },
+          "away_timeouts": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Away Timeouts"
+          },
+          "home_timeouts": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Home Timeouts"
+          },
+          "leaders": {
+            "items": {
+              "$ref": "#/components/schemas/LiveLeaderOut"
+            },
+            "type": "array",
+            "title": "Leaders"
+          }
+        },
+        "type": "object",
+        "required": [
+          "game_id",
+          "away_team",
+          "home_team",
+          "gameday",
+          "state",
+          "away_score",
+          "home_score",
+          "period",
+          "clock",
+          "possession",
+          "detail",
+          "away_periods",
+          "home_periods",
+          "down_distance",
+          "red_zone",
+          "last_play",
+          "away_timeouts",
+          "home_timeouts",
+          "leaders"
+        ],
+        "title": "LiveGameOut",
+        "description": "A game as the live tier reports it.\n\nDeliberately an overlay rather than a second copy of `Game`: it carries\n`game_id`, so the client merges it onto the cards it already has instead of\nlearning a parallel vocabulary for the same fixture."
+      },
+      "LiveLeaderOut": {
+        "properties": {
+          "category": {
+            "type": "string",
+            "enum": [
+              "passing",
+              "rushing",
+              "receiving"
+            ],
+            "title": "Category"
+          },
+          "player": {
+            "type": "string",
+            "title": "Player"
+          },
+          "team": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Team"
+          },
+          "detail": {
+            "type": "string",
+            "title": "Detail"
+          }
+        },
+        "type": "object",
+        "required": [
+          "category",
+          "player",
+          "team",
+          "detail"
+        ],
+        "title": "LiveLeaderOut",
+        "description": "A game leader. `detail` is the source's own phrasing, passed through."
+      },
       "LoadSeasonResponse": {
         "properties": {
           "season": {
@@ -3814,6 +4068,7 @@
             "type": "string",
             "enum": [
               "loaded",
+              "scheduled",
               "queued",
               "loading",
               "error",
@@ -5545,6 +5800,49 @@
         "title": "ScheduleWeek",
         "description": "A week of games returned by /schedule."
       },
+      "Scoreboard": {
+        "properties": {
+          "games": {
+            "items": {
+              "$ref": "#/components/schemas/LiveGameOut"
+            },
+            "type": "array",
+            "title": "Games"
+          },
+          "source": {
+            "type": "string",
+            "enum": [
+              "live",
+              "stale",
+              "schedule"
+            ],
+            "title": "Source"
+          },
+          "poll_after": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Poll After"
+          },
+          "fetched_at": {
+            "type": "string",
+            "title": "Fetched At"
+          }
+        },
+        "type": "object",
+        "required": [
+          "games",
+          "source",
+          "poll_after",
+          "fetched_at"
+        ],
+        "title": "Scoreboard"
+      },
       "ScoringPlay": {
         "properties": {
           "qtr": {
@@ -5683,6 +5981,7 @@
             "type": "string",
             "enum": [
               "loaded",
+              "scheduled",
               "queued",
               "loading",
               "error",

@@ -54,6 +54,13 @@ export function teamName(abbrev: string): string {
   return TEAM_NAMES[abbrev] ?? abbrev
 }
 
+/** Just the nickname: "Seahawks", not "Seattle Seahawks". */
+export function teamNickname(abbrev: string): string {
+  const full = teamName(abbrev)
+  if (full === abbrev) return abbrev
+  return full.split(' ').at(-1) ?? abbrev
+}
+
 export const TEAM_PRIMARY_COLORS: Record<string, string> = {
   ARI: '#97233f', ATL: '#a71930', BAL: '#241773', BUF: '#00338d',
   CAR: '#0085ca', CHI: '#0b162a', CIN: '#fb4f14', CLE: '#311d00',

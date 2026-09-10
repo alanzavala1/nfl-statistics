@@ -74,11 +74,35 @@ def load_season(
     return {"season": year, "status": status}
 
 
+# A stream this long-lived needs a ceiling. An ingest that hasn't emitted its
+# terminal line within this window is not going to, and holding the connection
+# open past that point only ties up a worker.
+_PROGRESS_TIMEOUT_SECONDS = 900
+
+
 @router.get("/seasons/{year}/progress")
 def season_progress(year: int):
+    # Refuse to open a stream when no ingest is in flight for this season.
+    #
+    # Without this the loop below waits forever on an `ingest_logs` entry that
+    # will never be written — and since ingest moved out of the serving
+    # container entirely, that is now every season, every day. Any anonymous
+    # caller could open unlimited never-closing streams against a service with
+    # a small instance cap, which is the cheapest possible way to reproduce the
+    # 2026-09-09 "no available instance" outage on purpose.
+    #
+    # An ADMIN_TOKEN header gate isn't available here: EventSource cannot send
+    # custom headers, so the frontend could not call it. Declining to open a
+    # stream that has nothing to say is both the security fix and the more
+    # honest behaviour — and the frontend only ever opens this immediately
+    # after queueing a load, which sets the status synchronously.
+    if season_status.get(year) not in ("queued", "loading"):
+        raise HTTPException(status_code=409, detail=f"No ingest is running for season {year}.")
+
     async def event_stream():
         sent = 0
-        while True:
+        deadline = asyncio.get_event_loop().time() + _PROGRESS_TIMEOUT_SECONDS
+        while asyncio.get_event_loop().time() < deadline:
             logs = ingest_logs.get(year, [])
             while sent < len(logs):
                 line = logs[sent]
@@ -87,6 +111,7 @@ def season_progress(year: int):
                 if line.startswith("__DONE__") or line.startswith("__ERROR__"):
                     return
             await asyncio.sleep(0.5)
+        yield "data: __ERROR__ progress stream timed out\n\n"
 
     return StreamingResponse(event_stream(), media_type="text/event-stream", headers={
         "Cache-Control": "no-cache",

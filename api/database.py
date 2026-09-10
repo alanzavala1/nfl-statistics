@@ -16,7 +16,11 @@ import threading
 
 import duckdb
 
-DB_PATH = os.path.join(os.path.dirname(__file__), "data", "nfl.duckdb")
+# Overridable so a local run can point at a rebuilt or experimental copy
+# without touching the working database. Production never sets it.
+DB_PATH = os.environ.get(
+    "NFL_DB_PATH", os.path.join(os.path.dirname(__file__), "data", "nfl.duckdb")
+)
 
 # The single-writer guarantee. Reentrant so an ingest run (which holds the
 # lock for its whole duration) can call the builders' materialize() functions,

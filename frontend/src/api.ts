@@ -23,6 +23,7 @@ import type {
   TeamGame, TeamLeader, TeamProfile, TeamSplit, TeamGameStats, ScoringPlay, WinProbPlay, WpaLeader, WpaLeaders,
   GameLineup, LineupPlayer, LineupTeam, LineupScoringEvent, PlayerChart, PlayerChartEvent,
   AskHistoryMessage, AskRequest, AskResponse, ToolCall,
+  Scoreboard,
 } from './types'
 
 const BASE = '/api'
@@ -61,6 +62,7 @@ export const api = {
   seasons:       ()                            => get<SeasonStatus[]>('/seasons'),
   loadSeason:    (year: number)                => fetch(`${BASE}/seasons/${year}/load?force=false`, { method: 'POST' }).then(r => r.json()),
   schedule:      (season: number)              => get<ScheduleWeek[]>(`/schedule?season=${season}`),
+  liveScoreboard: ()                           => get<Scoreboard>('/live/scoreboard'),
   game:          (gameId: string)              => get<GameDetail>(`/games/${gameId}`),
   gameLineup:    (gameId: string)              => get<GameLineup>(`/games/${gameId}/lineup`),
   playerChart:   (gameId: string, playerId: string) => get<PlayerChart>(`/games/${gameId}/players/${playerId}/chart`),
