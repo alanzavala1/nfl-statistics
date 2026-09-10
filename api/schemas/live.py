@@ -4,6 +4,14 @@ from typing import Literal
 from pydantic import BaseModel
 
 
+class LiveLeaderOut(BaseModel):
+    """A game leader. `detail` is the source's own phrasing, passed through."""
+    category: Literal["passing", "rushing", "receiving"]
+    player: str
+    team: str | None
+    detail: str
+
+
 class LiveGameOut(BaseModel):
     """A game as the live tier reports it.
 
@@ -22,6 +30,15 @@ class LiveGameOut(BaseModel):
     clock: str | None
     possession: str | None
     detail: str | None
+    # Enough for a game page to show something true before anything is charted.
+    away_periods: list[int]
+    home_periods: list[int]
+    down_distance: str | None
+    red_zone: bool
+    last_play: str | None
+    away_timeouts: int | None
+    home_timeouts: int | None
+    leaders: list[LiveLeaderOut]
 
 
 class Scoreboard(BaseModel):

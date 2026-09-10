@@ -1253,6 +1253,39 @@ export interface components {
             possession: string | null;
             /** Detail */
             detail: string | null;
+            /** Away Periods */
+            away_periods: number[];
+            /** Home Periods */
+            home_periods: number[];
+            /** Down Distance */
+            down_distance: string | null;
+            /** Red Zone */
+            red_zone: boolean;
+            /** Last Play */
+            last_play: string | null;
+            /** Away Timeouts */
+            away_timeouts: number | null;
+            /** Home Timeouts */
+            home_timeouts: number | null;
+            /** Leaders */
+            leaders: components["schemas"]["LiveLeaderOut"][];
+        };
+        /**
+         * LiveLeaderOut
+         * @description A game leader. `detail` is the source's own phrasing, passed through.
+         */
+        LiveLeaderOut: {
+            /**
+             * Category
+             * @enum {string}
+             */
+            category: "passing" | "rushing" | "receiving";
+            /** Player */
+            player: string;
+            /** Team */
+            team: string | null;
+            /** Detail */
+            detail: string;
         };
         /** LoadSeasonResponse */
         LoadSeasonResponse: {

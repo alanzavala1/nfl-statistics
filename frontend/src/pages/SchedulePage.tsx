@@ -7,7 +7,7 @@ import { LiveScoresProvider, useLiveGame } from '../hooks/useLiveScores'
 import Card, { CardRow } from '../components/Card'
 import Nav from '../components/Nav'
 import { AWARD_LABEL, AWARD_ORDER, PAST_AWARDS, SB_CHAMPS } from '../utils/awards'
-import { teamLogoUrl, teamName } from '../utils/teams'
+import { teamLogoUrl, teamName, teamNickname } from '../utils/teams'
 
 const GAME_TYPE_LABELS: Record<string, string> = { WC: 'Wild Card', DIV: 'Divisional', CON: 'Conference', SB: 'Super Bowl' }
 const GAME_TYPE_PRIORITY: Record<string, number> = { SB: 4, CON: 3, DIV: 2, WC: 1, REG: 0 }
@@ -226,12 +226,6 @@ function findCurrentWeek(schedule: WeekGroup[]): number | null {
   if (allComplete.length) return allComplete[allComplete.length - 1].week
   const firstUpcoming = schedule.find(w => w.games.every(g => !isFinished(g)))
   return firstUpcoming?.week ?? schedule[0]?.week ?? null
-}
-
-function teamNickname(abbrev: string) {
-  const full = teamName(abbrev)
-  if (full === abbrev) return abbrev
-  return full.split(' ').at(-1) ?? abbrev
 }
 
 function recordText(record?: string | null) {

@@ -110,6 +110,21 @@ class TestPollInterval:
         delayed = KICKOFF + timedelta(hours=8)
         assert clock.poll_interval(delayed, states=["in"], games=[OPENER]) == clock.LIVE
 
-    def test_stale_live_state_stops_once_the_game_is_reported_over(self):
+    def test_a_finished_game_we_have_not_ingested_keeps_polling_slowly(self):
+        # nflverse charts hours after the whistle. Until our own data catches up
+        # the live source is the only thing that knows the final score, so the
+        # window closing must not stop us asking — that is how a finished game
+        # reverted to reading as "Upcoming".
         after = KICKOFF + timedelta(hours=8)
-        assert clock.poll_interval(after, states=["post"], games=[OPENER]) is clock.IDLE
+        assert clock.poll_interval(after, states=["post"], games=[OPENER]) == clock.POST
+
+    def test_polling_stops_once_the_result_is_in_our_database(self):
+        after = KICKOFF + timedelta(hours=8)
+        ingested = {**OPENER, "away_score": 10, "home_score": 13}
+        assert clock.poll_interval(after, states=["post"], games=[ingested]) is clock.IDLE
+
+    def test_backfill_ignores_a_game_that_has_not_kicked_off(self):
+        # An unplayed fixture also has no stored score; only a past kickoff counts.
+        long_before = KICKOFF - timedelta(days=3)
+        assert clock.poll_interval(long_before, games=[OPENER]) is clock.IDLE
+        assert clock.awaiting_result(long_before, games=[OPENER]) == []

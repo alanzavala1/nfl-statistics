@@ -35,6 +35,11 @@ KICKOFF_TZ = ZoneInfo("America/New_York")
 LEAD_IN = timedelta(minutes=15)
 NOMINAL_LENGTH = timedelta(hours=4)
 
+# How far back to look for games whose result we still haven't ingested.
+# nflverse promises charting "within 48 hours"; two days covers that without
+# dragging the whole week into every query.
+BACKFILL_DAYS = 2
+
 # Poll intervals, in seconds. `None` means don't poll at all.
 IDLE = None
 PRE = 60      # in the window, waiting for kickoff
@@ -65,20 +70,22 @@ def kickoff_utc(gameday: str | None, gametime: str | None) -> datetime | None:
     return local.astimezone(timezone.utc)
 
 
-def games_near(now: datetime) -> list[dict]:
-    """Schedule rows within a day of `now` in either direction.
+def games_near(now: datetime, lookback_days: int = 1) -> list[dict]:
+    """Schedule rows around `now`, with whatever result we have stored.
 
-    A day either side is enough to bridge the gap between a UTC instant and an
-    Eastern calendar date without scanning a season. Imported here rather than
+    A day forward is enough to bridge a UTC instant against an Eastern calendar
+    date. Looking further back covers games that have finished but whose stats
+    we haven't ingested yet — see `awaiting_result`. Imported here rather than
     at module scope so the rest of this module stays usable without a database.
     """
     from database import query_to_dict
 
-    lo = (now - timedelta(days=1)).date().isoformat()
+    lo = (now - timedelta(days=lookback_days)).date().isoformat()
     hi = (now + timedelta(days=1)).date().isoformat()
     return query_to_dict(
         """
-        SELECT game_id, season, week, gameday, gametime, away_team, home_team
+        SELECT game_id, season, week, gameday, gametime, away_team, home_team,
+               away_score, home_score
         FROM schedules
         WHERE gameday BETWEEN ? AND ?
         ORDER BY gameday, gametime
@@ -104,6 +111,29 @@ def live_window(now: datetime | None = None, games: list[dict] | None = None) ->
     return out
 
 
+def awaiting_result(now: datetime | None = None, games: list[dict] | None = None) -> list[dict]:
+    """Games that have kicked off but whose result we haven't stored.
+
+    nflverse charts play-by-play hours after the whistle, so between a game
+    ending and the next ingest our database has no score for it while the live
+    source has had one all along. Without this the window shuts at kickoff plus
+    four hours and a finished game reverts to reading as "Upcoming" — which is
+    what happened on the 2026 opener, saved only by charting landing 20 minutes
+    after the window closed.
+    """
+    now = now or datetime.now(timezone.utc)
+    rows = games_near(now, lookback_days=BACKFILL_DAYS) if games is None else games
+
+    out = []
+    for g in rows:
+        if g.get("away_score") is not None and g.get("home_score") is not None:
+            continue                                    # already ingested
+        kickoff = kickoff_utc(g.get("gameday"), g.get("gametime"))
+        if kickoff and kickoff <= now:
+            out.append({**g, "kickoff": kickoff})
+    return out
+
+
 def poll_interval(
     now: datetime | None = None,
     states: list[str] | None = None,
@@ -120,13 +150,18 @@ def poll_interval(
     if states and any(s == "in" for s in states):
         return LIVE
 
-    window = live_window(now, games)
-    if not window:
-        return IDLE
+    if live_window(now, games):
+        if states and all(s == "post" for s in states):
+            return POST
+        return PRE
 
-    if states and all(s == "post" for s in states):
+    # Outside the window, but a recent game's result still hasn't reached our
+    # database. Keep asking at the wind-down cadence so the page can show a
+    # final score instead of pretending the game hasn't happened.
+    if awaiting_result(now, games):
         return POST
-    return PRE
+
+    return IDLE
 
 
 def is_game_window(now: datetime | None = None, games: list[dict] | None = None) -> bool:

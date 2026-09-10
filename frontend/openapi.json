@@ -3921,6 +3921,75 @@
               }
             ],
             "title": "Detail"
+          },
+          "away_periods": {
+            "items": {
+              "type": "integer"
+            },
+            "type": "array",
+            "title": "Away Periods"
+          },
+          "home_periods": {
+            "items": {
+              "type": "integer"
+            },
+            "type": "array",
+            "title": "Home Periods"
+          },
+          "down_distance": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Down Distance"
+          },
+          "red_zone": {
+            "type": "boolean",
+            "title": "Red Zone"
+          },
+          "last_play": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Last Play"
+          },
+          "away_timeouts": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Away Timeouts"
+          },
+          "home_timeouts": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Home Timeouts"
+          },
+          "leaders": {
+            "items": {
+              "$ref": "#/components/schemas/LiveLeaderOut"
+            },
+            "type": "array",
+            "title": "Leaders"
           }
         },
         "type": "object",
@@ -3935,10 +4004,59 @@
           "period",
           "clock",
           "possession",
-          "detail"
+          "detail",
+          "away_periods",
+          "home_periods",
+          "down_distance",
+          "red_zone",
+          "last_play",
+          "away_timeouts",
+          "home_timeouts",
+          "leaders"
         ],
         "title": "LiveGameOut",
         "description": "A game as the live tier reports it.\n\nDeliberately an overlay rather than a second copy of `Game`: it carries\n`game_id`, so the client merges it onto the cards it already has instead of\nlearning a parallel vocabulary for the same fixture."
+      },
+      "LiveLeaderOut": {
+        "properties": {
+          "category": {
+            "type": "string",
+            "enum": [
+              "passing",
+              "rushing",
+              "receiving"
+            ],
+            "title": "Category"
+          },
+          "player": {
+            "type": "string",
+            "title": "Player"
+          },
+          "team": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Team"
+          },
+          "detail": {
+            "type": "string",
+            "title": "Detail"
+          }
+        },
+        "type": "object",
+        "required": [
+          "category",
+          "player",
+          "team",
+          "detail"
+        ],
+        "title": "LiveLeaderOut",
+        "description": "A game leader. `detail` is the source's own phrasing, passed through."
       },
       "LoadSeasonResponse": {
         "properties": {

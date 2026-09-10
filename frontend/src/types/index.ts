@@ -15,6 +15,7 @@ export type LoadSeasonResponse  = Schemas['LoadSeasonResponse']
 
 // Live scoreboard
 export type LiveGameOut      = Schemas['LiveGameOut']
+export type LiveLeaderOut    = Schemas['LiveLeaderOut']
 export type Scoreboard       = Schemas['Scoreboard']
 
 // Schedule / games

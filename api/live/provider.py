@@ -29,6 +29,20 @@ ESPN_TEAM_FIXUPS = {"LAR": "LA", "WSH": "WAS"}
 
 
 @dataclass(frozen=True)
+class LiveLeader:
+    """A game's statistical leader, as the source phrases it.
+
+    `detail` is passed through verbatim ("16/22, 187 YDS, 1 TD") rather than
+    parsed into fields. Mid-game these are a glance, not a stat table — and the
+    charted numbers that arrive later are the ones worth modelling properly.
+    """
+    category: str                # "passing" | "rushing" | "receiving"
+    player: str
+    team: str | None
+    detail: str
+
+
+@dataclass(frozen=True)
 class LiveGame:
     """One game as the live source sees it.
 
@@ -47,6 +61,18 @@ class LiveGame:
     possession: str | None = None
     detail: str | None = None    # e.g. "Q3 - 4:12", "Final/OT"
     game_id: str | None = None
+
+    # Everything below exists so the game page has something true to show while
+    # a game is being played — none of it is charted until after the whistle,
+    # and all of it arrives in the same request as the score.
+    away_periods: tuple[int, ...] = ()
+    home_periods: tuple[int, ...] = ()
+    down_distance: str | None = None
+    red_zone: bool = False
+    last_play: str | None = None
+    away_timeouts: int | None = None
+    home_timeouts: int | None = None
+    leaders: tuple[LiveLeader, ...] = ()
 
 
 class LiveScoreProvider(Protocol):
@@ -93,14 +119,20 @@ class ESPNProvider:
                 sides[c.get("homeAway")] = (
                     ESPN_TEAM_FIXUPS.get(abbr, abbr),
                     _int_or_none(c.get("score")),
+                    tuple(
+                        n for n in (
+                            _int_or_none(q.get("value")) for q in c.get("linescores") or []
+                        ) if n is not None
+                    ),
                 )
             if "home" not in sides or "away" not in sides:
                 return None
 
-            away_team, away_score = sides["away"]
-            home_team, home_score = sides["home"]
+            away_team, away_score, away_periods = sides["away"]
+            home_team, home_score, home_periods = sides["home"]
             state = stype.get("state") or "pre"
             started = state != "pre"
+            situation = comp.get("situation") or {}
 
             return LiveGame(
                 away_team=away_team,
@@ -116,6 +148,15 @@ class ESPNProvider:
                 clock=status.get("displayClock") if state == "in" else None,
                 possession=self._possession(comp),
                 detail=stype.get("shortDetail") or stype.get("detail"),
+                away_periods=away_periods,
+                home_periods=home_periods,
+                down_distance=self._down_distance(situation) if state == "in" else None,
+                red_zone=bool(situation.get("isRedZone")) if state == "in" else False,
+                last_play=((situation.get("lastPlay") or {}).get("text")
+                           if state == "in" else None),
+                away_timeouts=_int_or_none(situation.get("awayTimeouts")),
+                home_timeouts=_int_or_none(situation.get("homeTimeouts")),
+                leaders=self._leaders(comp),
             )
         except (KeyError, IndexError, TypeError):
             # One malformed event must not blank the whole scoreboard.
@@ -134,6 +175,59 @@ class ESPNProvider:
             return utc.astimezone(KICKOFF_TZ).date().isoformat()
         except ValueError:
             return ""
+
+    # ESPN names these in camelCase and by full stat; the UI wants the phase of
+    # play. Anything outside this map is skipped rather than shown raw.
+    _LEADER_CATEGORIES = {
+        "passingYards": "passing",
+        "rushingYards": "rushing",
+        "receivingYards": "receiving",
+    }
+
+    @staticmethod
+    def _down_distance(situation: dict) -> str | None:
+        """Down and distance, preferring the source's own phrasing.
+
+        `downDistanceText` is normally present but goes missing during
+        stoppages, so it falls back to composing the parts — which is better
+        than the panel emptying out every time there's a timeout.
+        """
+        text = situation.get("downDistanceText")
+        if text:
+            return text
+        down, distance = situation.get("down"), situation.get("distance")
+        if not down:
+            return None
+        ordinal = {1: "1st", 2: "2nd", 3: "3rd", 4: "4th"}.get(down, f"{down}th")
+        return f"{ordinal} & {distance}" if distance is not None else ordinal
+
+    def _leaders(self, comp: dict) -> tuple[LiveLeader, ...]:
+        by_espn_id = {
+            str(c.get("id")): ESPN_TEAM_FIXUPS.get(
+                c.get("team", {}).get("abbreviation"), c.get("team", {}).get("abbreviation")
+            )
+            for c in comp.get("competitors", [])
+        }
+
+        out = []
+        for block in comp.get("leaders") or []:
+            category = self._LEADER_CATEGORIES.get(block.get("name"))
+            entries = block.get("leaders") or []
+            if not category or not entries:
+                continue
+            entry = entries[0]
+            player = (entry.get("athlete") or {}).get("shortName")
+            if not player:
+                continue
+            out.append(
+                LiveLeader(
+                    category=category,
+                    player=player,
+                    team=by_espn_id.get(str((entry.get("team") or {}).get("id"))),
+                    detail=entry.get("displayValue") or "",
+                )
+            )
+        return tuple(out)
 
     @staticmethod
     def _possession(comp: dict) -> str | None:

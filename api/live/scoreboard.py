@@ -72,13 +72,16 @@ def _from_schedule(now: datetime) -> list[LiveGame]:
     """
     from database import query_to_dict
 
-    lo = (now.date().isoformat(), )
+    from datetime import timedelta
+    lo = (now - timedelta(days=clock.BACKFILL_DAYS)).date().isoformat()
+    hi = (now + timedelta(days=1)).date().isoformat()
     rows = query_to_dict(
         """
         SELECT game_id, gameday, away_team, home_team, away_score, home_score
-        FROM schedules WHERE gameday = ?
+        FROM schedules WHERE gameday BETWEEN ? AND ?
+        ORDER BY gameday, gametime
         """,
-        list(lo),
+        [lo, hi],
     )
     out = []
     for r in rows:
