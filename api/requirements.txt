@@ -9,3 +9,7 @@ httpx
 pytest
 python-dotenv
 anthropic
+# zoneinfo needs an IANA database to resolve America/New_York, which is how
+# schedule kickoffs are published. Debian slim images don't reliably ship one,
+# and the failure would be a hard error on every live-clock call.
+tzdata
