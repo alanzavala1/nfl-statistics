@@ -2,8 +2,12 @@ name: Deploy to Cloud Run
 
 # Manual trigger so deploys (and any cost) are intentional. Flip to
 # `push: {branches: [main]}` for continuous deployment once you're confident.
+# `workflow_call` lets refresh.yml deploy after it lands new data — calling this
+# workflow rather than duplicating its steps, and avoiding the PAT a
+# cross-workflow dispatch would need (GITHUB_TOKEN can't trigger one).
 on:
   workflow_dispatch:
+  workflow_call:
 
 env:
   REGION: us-central1

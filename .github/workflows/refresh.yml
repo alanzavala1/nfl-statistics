@@ -1,0 +1,105 @@
+name: Refresh season data
+
+# The ingest lives here, not in the serving container. Actions is free on a
+# public repo, the runner has more headroom than the Cloud Run instance, and
+# the Workload Identity auth and GCS access are already proven by deploy.yml.
+#
+# Most runs do nothing. The `check` job reads a few bytes to decide, and only a
+# real upstream change pulls the 477MB database down — which is the whole point
+# of keeping the watermark in its own object rather than inside the database.
+on:
+  schedule:
+    # 09:00 UTC daily — after even a west-coast night game has finished and
+    # nflverse has had time to chart it.
+    - cron: '0 9 * * *'
+  workflow_dispatch:
+    inputs:
+      season:
+        description: 'Season to refresh (blank = newest scheduled)'
+        required: false
+        type: string
+      force:
+        description: 'Ingest even if nothing changed upstream'
+        type: boolean
+        default: false
+
+permissions:
+  contents: read
+  id-token: write          # Workload Identity Federation, for this job and deploy.yml
+
+env:
+  WATERMARKS: watermarks.json
+
+jobs:
+  refresh:
+    runs-on: ubuntu-latest
+    outputs:
+      changed: ${{ steps.check.outputs.changed }}
+      season: ${{ steps.check.outputs.season }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - id: auth
+        uses: google-github-actions/auth@v2
+        with:
+          project_id: ${{ secrets.GCP_PROJECT_ID }}
+          workload_identity_provider: ${{ secrets.GCP_WIF_PROVIDER }}
+          service_account: ${{ secrets.GCP_SA_EMAIL }}
+
+      - uses: google-github-actions/setup-gcloud@v2
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+          cache: pip
+          cache-dependency-path: api/requirements.txt
+
+      - run: pip install -r api/requirements.txt
+
+      # Tiny object. Absent on the first ever run, which `check` treats as
+      # "never ingested" rather than an error.
+      - name: Fetch watermarks
+        run: |
+          gcloud storage cp "gs://${{ secrets.GCP_DB_BUCKET }}/$WATERMARKS" "api/$WATERMARKS" \
+            || echo "no watermarks yet — first run"
+
+      - name: Check for new data
+        id: check
+        working-directory: api
+        env:
+          REFRESH_SEASON: ${{ inputs.season }}
+          REFRESH_FORCE: ${{ inputs.force && '1' || '0' }}
+        run: python -m jobs.refresh check "$WATERMARKS"
+
+      # Everything below runs only when something actually moved upstream.
+
+      - name: Fetch database from GCS
+        if: steps.check.outputs.changed == 'true'
+        run: gcloud storage cp "gs://${{ secrets.GCP_DB_BUCKET }}/nfl.duckdb" api/data/nfl.duckdb
+
+      - name: Ingest
+        if: steps.check.outputs.changed == 'true'
+        working-directory: api
+        env:
+          REFRESH_SEASON: ${{ inputs.season }}
+        run: python -m jobs.refresh ingest "$WATERMARKS"
+
+      # Data integrity gate, same suite the deploy runs inside the image. A bad
+      # ingest must not reach the bucket, because the bucket is what gets baked.
+      - name: Verify the rebuilt database
+        if: steps.check.outputs.changed == 'true'
+        working-directory: api
+        run: python -m pytest tests/test_reconciliation.py -q
+
+      - name: Upload rebuilt database
+        if: steps.check.outputs.changed == 'true'
+        run: |
+          gcloud storage cp api/data/nfl.duckdb "gs://${{ secrets.GCP_DB_BUCKET }}/nfl.duckdb"
+          gcloud storage cp "api/$WATERMARKS" "gs://${{ secrets.GCP_DB_BUCKET }}/$WATERMARKS"
+
+  # deploy.yml pulls the database we just uploaded and bakes it into the image.
+  deploy:
+    needs: refresh
+    if: needs.refresh.outputs.changed == 'true'
+    uses: ./.github/workflows/deploy.yml
+    secrets: inherit
