@@ -6,6 +6,8 @@ import type { GameDetail, GameLineup, PlayerStats, WeekGroup, WinProbPlay } from
 import Nav from '../components/Nav'
 import GameLineupView, { GameRail, GameScorers, LINEUP_CSS } from '../components/GameLineupView'
 import Card from '../components/Card'
+import { LiveScoresProvider, useLiveGame } from '../hooks/useLiveScores'
+import type { LiveGameOut } from '../types'
 import { teamLogoUrl, teamName, teamPrimaryColor } from '../utils/teams'
 
 interface GameCtx { gameId: string; season: number; week: number; awayTeam: string; homeTeam: string; fromWeek?: number }
@@ -32,15 +34,17 @@ function formatGameday(s: string | null) {
 
 // ── Card 2: Team stats (away | label | home) ──────────────────────────────────
 
-function GameHeader({ game, lineup, tab, onTab }: { game: GameDetail; lineup: GameLineup | null; tab: GameTab; onTab: (tab: GameTab) => void }) {
+function GameHeader({ game, lineup, tab, onTab, live }: { game: GameDetail; lineup: GameLineup | null; tab: GameTab; onTab: (tab: GameTab) => void; live?: LiveGameOut | null }) {
+  const isLive = live?.state === 'in'
   const awayWon = game.away_score != null && game.home_score != null && game.away_score > game.home_score
   const homeWon = game.away_score != null && game.home_score != null && game.home_score > game.away_score
-  const final = game.away_score != null
+  // A game being played is not final, and must not be labelled Upcoming either.
+  const final = !isLive && game.away_score != null
   return <Card className="mb-5">
-    <div className={`flex items-center gap-4 border-b border-surface-line px-4 py-3 ${game.game_type === 'SB' ? 'bg-gradient-to-r from-gold/25 via-gold/10 to-transparent' : 'bg-surface-raise'}`}><div className="min-w-0"><div className={`text-[10px] font-bold uppercase tracking-[.14em] ${game.game_type === 'SB' ? 'text-gold' : 'text-ink-dim'}`}>{weekLabel(game.week)}</div><div className="mt-0.5 truncate text-xs text-ink-mid">{formatGameday(game.gameday)}{game.stadium ? ` · ${game.stadium}` : ''}</div></div><div className="ml-auto shrink-0 text-[10px] font-bold uppercase tracking-[.14em] text-ink-dim">{final ? 'Final' : 'Upcoming'}</div></div>
+    <div className={`flex items-center gap-4 border-b border-surface-line px-4 py-3 ${game.game_type === 'SB' ? 'bg-gradient-to-r from-gold/25 via-gold/10 to-transparent' : 'bg-surface-raise'}`}><div className="min-w-0"><div className={`text-[10px] font-bold uppercase tracking-[.14em] ${game.game_type === 'SB' ? 'text-gold' : 'text-ink-dim'}`}>{weekLabel(game.week)}</div><div className="mt-0.5 truncate text-xs text-ink-mid">{formatGameday(game.gameday)}{game.stadium ? ` · ${game.stadium}` : ''}</div></div><div className={`ml-auto shrink-0 text-[10px] font-bold uppercase tracking-[.14em] ${isLive ? 'text-data-live' : 'text-ink-dim'}`}>{isLive ? <span className="flex items-center gap-1.5"><span className="h-1.5 w-1.5 animate-pulse rounded-full bg-data-live motion-reduce:animate-none" />Live</span> : final ? 'Final' : 'Upcoming'}</div></div>
     <div className="flex items-center gap-2 px-4 py-6 sm:px-6">
       <Link to={`/teams/${game.away_team}`} className={`group flex flex-1 flex-col items-center gap-2 sm:flex-row ${awayWon || !final ? '' : 'opacity-50'}`}><img src={teamLogoUrl(game.away_team)} alt="" className="h-12 w-12 object-contain sm:h-16 sm:w-16" /><div className="text-center sm:text-left"><div className="text-xs font-bold text-ink group-hover:text-indigo-400 sm:text-sm">{teamName(game.away_team)}</div>{game.away_record && <div className="text-[10px] text-ink-dim sm:text-xs">{game.away_record}</div>}</div></Link>
-      <div className="flex shrink-0 items-center gap-2 sm:gap-3">{final ? <><span className={`text-3xl font-black tabular-nums sm:text-5xl ${awayWon ? 'text-ink' : 'text-ink-dim'}`}>{game.away_score}</span><span className="text-xl text-ink-dim">–</span><span className={`text-3xl font-black tabular-nums sm:text-5xl ${homeWon ? 'text-ink' : 'text-ink-dim'}`}>{game.home_score}</span></> : <span className="text-sm text-ink-dim">Upcoming</span>}</div>
+      <div className="flex shrink-0 flex-col items-center gap-1">{isLive ? <><div className="flex items-center gap-2 sm:gap-3"><span className="text-3xl font-black tabular-nums text-ink sm:text-5xl">{live?.away_score ?? 0}</span><span className="text-xl text-ink-dim">–</span><span className="text-3xl font-black tabular-nums text-ink sm:text-5xl">{live?.home_score ?? 0}</span></div><div className="text-[11px] font-bold uppercase tracking-[.12em] tabular-nums text-data-live">{live?.period ? `Q${live.period}` : 'Live'}{live?.clock ? ` · ${live.clock}` : ''}</div>{live?.possession && <div className="text-[10px] font-bold uppercase tracking-[.12em] text-ink-dim">{live.possession} ball</div>}</> : final ? <><span className={`text-3xl font-black tabular-nums sm:text-5xl ${awayWon ? 'text-ink' : 'text-ink-dim'}`}>{game.away_score}</span><span className="text-xl text-ink-dim">–</span><span className={`text-3xl font-black tabular-nums sm:text-5xl ${homeWon ? 'text-ink' : 'text-ink-dim'}`}>{game.home_score}</span></> : <span className="text-sm text-ink-dim">Upcoming</span>}</div>
       <Link to={`/teams/${game.home_team}`} className={`group flex flex-1 flex-col items-center gap-2 sm:flex-row-reverse ${homeWon || !final ? '' : 'opacity-50'}`}><img src={teamLogoUrl(game.home_team)} alt="" className="h-12 w-12 object-contain sm:h-16 sm:w-16" /><div className="text-center sm:text-right"><div className="text-xs font-bold text-ink group-hover:text-indigo-400 sm:text-sm">{teamName(game.home_team)}</div>{game.home_record && <div className="text-[10px] text-ink-dim sm:text-xs">{game.home_record}</div>}</div></Link>
     </div>
     {lineup && <GameScorers lineup={lineup} />}
@@ -722,8 +726,9 @@ function WinProbabilityChart({ game }: { game: GameDetail }) {
 
 // ── Page ──────────────────────────────────────────────────────────────────────
 
-export default function GamePage() {
+function GamePageBody() {
   const { gameId } = useParams<{ gameId: string }>()
+  const live = useLiveGame(gameId)
   const location = useLocation()
   const fromWeek: number | undefined = (location.state as any)?.fromWeek
   const [game, setGame] = useState<GameDetail | null>(null)
@@ -758,7 +763,7 @@ export default function GamePage() {
       <div className="max-w-6xl mx-auto px-4 py-8">
         <GameContext.Provider value={{ gameId: game.game_id, season: game.season, week: game.week, awayTeam: game.away_team, homeTeam: game.home_team, fromWeek }}>
           <style>{LINEUP_CSS}</style>
-          <GameHeader game={game} lineup={lineup} tab={tab} onTab={setTab} />
+          <GameHeader game={game} lineup={lineup} tab={tab} onTab={setTab} live={live} />
           <div className="lineup-page">
           <main className="feed">
           {tab === 'overview' && (
@@ -792,5 +797,14 @@ export default function GamePage() {
 
       </div>
     </div>
+  )
+}
+
+
+export default function GamePage() {
+  return (
+    <LiveScoresProvider>
+      <GamePageBody />
+    </LiveScoresProvider>
   )
 }
