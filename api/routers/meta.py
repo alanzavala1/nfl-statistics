@@ -27,15 +27,26 @@ def health():
 def get_seasons(response: Response):
     # Live load-status — caching it makes the season picker lie mid-ingest.
     response.headers["Cache-Control"] = "no-store"
+    # "loaded" has to mean the stats pages have something to show, and that
+    # needs plays. A season's schedule is published months before its first
+    # snap, so rows in `schedules` alone mean only that the fixtures are known —
+    # calling that loaded sends people to empty leaders and standings. Both
+    # DISTINCTs are single-column scans DuckDB answers in a few ms.
     try:
-        loaded = {r["season"] for r in query_to_dict("SELECT DISTINCT season FROM schedules")}
+        played = {r["season"] for r in query_to_dict("SELECT DISTINCT season FROM plays")}
+        scheduled = {r["season"] for r in query_to_dict("SELECT DISTINCT season FROM schedules")}
     except Exception:
-        loaded = set()
+        played, scheduled = set(), set()
+
+    def _state(year: int) -> str:
+        if year in played:
+            return "loaded"
+        if year in scheduled:
+            return "scheduled"
+        return "available"
+
     return [
-        {
-            "season": year,
-            "status": season_status.get(year, "loaded" if year in loaded else "available"),
-        }
+        {"season": year, "status": season_status.get(year, _state(year))}
         for year in range(CURRENT_SEASON, FIRST_SEASON - 1, -1)
     ]
 
@@ -52,12 +63,13 @@ def load_season(
     ip = request.client.host if request and request.client else "unknown"
     if _limiter.limited(ip):
         raise HTTPException(status_code=429, detail="Too many load requests — give it a minute.")
-    # force=true re-ingests an already-loaded season (expensive). Gate it behind
-    # a server-side admin token; the frontend only ever calls with force=false.
-    if force:
-        admin = os.environ.get("ADMIN_TOKEN")
-        if not admin or x_admin_token != admin:
-            raise HTTPException(status_code=403, detail="force reload requires a valid admin token")
+    # Every ingest is now admin-only, not just force=true. Ingest is a heavy,
+    # single-writer job that has no business running inside a container serving
+    # traffic; production ships a rebuilt database instead (see api/jobs/). This
+    # endpoint survives for local rebuilds and one-off repairs.
+    admin = os.environ.get("ADMIN_TOKEN")
+    if not admin or x_admin_token != admin:
+        raise HTTPException(status_code=403, detail="Ingest requires a valid admin token")
     status = queue_season(year, force=force)
     return {"season": year, "status": status}
 

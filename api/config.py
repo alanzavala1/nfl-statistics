@@ -1,16 +1,47 @@
 """App-wide constants and configuration."""
+import os
 from datetime import datetime
 
 FIRST_SEASON = 1999
-AUTO_LOAD_SEASONS = 5  # auto-queue this many recent seasons on startup
 
 
-def _current_nfl_season() -> int:
+def _calendar_season_guess() -> int:
+    """Best guess at the current season when the schedule can't be read.
+
+    The NFL opens the Thursday after Labor Day, so a season is never under way
+    before ~Sept 4 and always is by mid-month. The old rule (month >= 9) claimed
+    the new season on Sept 1 — up to ten days before a single game was played,
+    and well before nflverse publishes anything for it.
+    """
     now = datetime.now()
-    return now.year if now.month >= 9 else now.year - 1
+    if now.month > 9 or (now.month == 9 and now.day >= 15):
+        return now.year
+    return now.year - 1
 
 
-CURRENT_SEASON = _current_nfl_season()
+def _latest_scheduled_season() -> int | None:
+    """Newest season the schedule actually covers, or None if unreadable.
+
+    `database` is imported lazily so this module stays importable without a
+    database — tests seed their own connection, and tooling imports config
+    without ever serving a request.
+    """
+    if os.environ.get("NFL_TEST_MODE"):
+        return None
+    try:
+        from database import query_to_dict
+        rows = query_to_dict("SELECT MAX(season) AS season FROM schedules")
+        if rows and rows[0]["season"] is not None:
+            return int(rows[0]["season"])
+    except Exception:
+        pass
+    return None
+
+
+# Data first: a season is current once the schedule covers it, not once the
+# calendar says so. Schedules are published months ahead, so this flips as soon
+# as the new season is ingested — and never claims a season we hold no data for.
+CURRENT_SEASON = _latest_scheduled_season() or _calendar_season_guess()
 
 
 TEAM_NAMES: dict[str, str] = {

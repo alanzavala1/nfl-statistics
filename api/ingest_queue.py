@@ -47,6 +47,11 @@ def _load_worker() -> None:
 
 def queue_season(year: int, force: bool = False) -> str:
     """Enqueue a season for loading. Returns the resulting status string."""
+    # Start the worker on first use rather than at app startup: a serving
+    # container that is never asked to ingest should not carry an ingest
+    # thread at all. Idempotent, so repeated calls are free.
+    start_worker()
+
     current = season_status.get(year)
     if current in ("queued", "loading"):
         return current

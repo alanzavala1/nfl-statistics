@@ -8,9 +8,8 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import FileResponse
 from starlette.middleware.gzip import GZipMiddleware
 
-from config import AUTO_LOAD_SEASONS, CURRENT_SEASON, FIRST_SEASON
-from database import ensure_indexes, get_connection, query_to_dict
-from ingest_queue import queue_season, start_worker
+from config import CURRENT_SEASON
+from database import ensure_indexes, get_connection
 from routers import assistant, leaders, meta, players, power_rankings, schedule, teams
 
 
@@ -38,9 +37,6 @@ def _ensure_player_awards() -> None:
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
-    # Start the single background ingest worker
-    start_worker()
-
     # Point-lookup indexes on the large tables hit per request (idempotent;
     # persisted by DuckDB so this is a no-op after the first build).
     ensure_indexes()
@@ -48,25 +44,18 @@ async def lifespan(app: FastAPI):
     # Static seed data — populate on first boot if not already loaded
     _ensure_player_awards()
 
-    # Auto-queue the N most recent seasons that aren't already in the DB.
-    # If we can't read what's loaded (e.g. the DB is momentarily locked by
-    # another process), DON'T treat that as "nothing loaded" — that would
-    # re-ingest seasons we already have. Skip auto-load for this boot instead.
-    try:
-        loaded = {r["season"] for r in query_to_dict("SELECT DISTINCT season FROM schedules")}
-    except Exception as e:
-        print(f"startup: could not read loaded seasons ({e}); skipping auto-load this boot")
-        loaded = None
-
-    if loaded is not None:
-        queued = 0
-        for year in range(CURRENT_SEASON, FIRST_SEASON - 1, -1):
-            if queued >= AUTO_LOAD_SEASONS:
-                break
-            if year not in loaded:
-                queue_season(year, force=False)
-                queued += 1
-
+    # NOTE: startup deliberately does NOT ingest. It used to auto-queue any
+    # recent season missing from the DB, which meant a cold start downloaded a
+    # full season of play-by-play and re-materialized every derived table —
+    # inside the container serving traffic, holding the write lock against
+    # every reader. On 2026-09-01 that took the site down: the season rolled
+    # over before nflverse had published any 2026 plays, so each cold boot
+    # crash-looped. Ingest now runs offline and ships as a rebuilt database.
+    #
+    # The two calls above do still write, so this isn't a pure reader — but
+    # both are local, idempotent and bounded (an index build that DuckDB
+    # persists, and a static seed). Nothing here touches the network, and
+    # nothing here scales with how much football has been played.
     yield
 
 
